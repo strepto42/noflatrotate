@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace 'com.truffulatree.noflatrotate'
-    compileSdk 36
+    compileSdkVersion 36
 
     defaultConfig {
         applicationId "com.truffulatree.noflatrotate"
@@ -56,6 +56,8 @@ dependencies {
 
     // AndroidX Test Core - Provides core testing APIs, often used with Robolectric
     testImplementation 'androidx.test:core:1.7.0'
+    testImplementation 'androidx.test.ext:junit:1.3.0' 
+
     // testImplementation 'androidx.test:runner:1.5.2' // Usually for instrumented tests, but can be useful
     // testImplementation 'androidx.test:rules:1.5.0'   // For Junit Rules in testing
 

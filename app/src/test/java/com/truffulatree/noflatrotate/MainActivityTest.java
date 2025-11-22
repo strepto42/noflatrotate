@@ -1,6 +1,5 @@
 package com.truffulatree.noflatrotate;
 
-import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.view.View;
