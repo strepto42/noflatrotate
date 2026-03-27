@@ -17,7 +17,6 @@ import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.Display;
 import android.view.Surface;
 import android.view.WindowManager;
 
@@ -86,14 +85,10 @@ public class RotationService extends Service implements SensorEventListener {
         createNotificationChannel();
     }
 
-    @SuppressWarnings("deprecation")
     private int getCurrentRotation() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Display display = getDisplay();
-            return display != null ? display.getRotation() : Surface.ROTATION_0;
-        } else {
-            return windowManager.getDefaultDisplay().getRotation();
-        }
+        // Note: getDefaultDisplay() is deprecated but getDisplay() can't be used from a Service
+        // context (only visual contexts like Activity). This is the correct approach for Services.
+        return windowManager.getDefaultDisplay().getRotation();
     }
 
     private void loadThresholdsFromPreferences() {
@@ -140,7 +135,7 @@ public class RotationService extends Service implements SensorEventListener {
             sensorManager.unregisterListener(this);
         }
         if (rotationPreviouslyLocked) {
-            setAutoOrientationEnabled(true);
+            setAutoOrientationEnabled();
             Log.d(TAG, "Service destroyed. Re-enabled auto-rotation.");
         }
     }
@@ -250,10 +245,10 @@ public class RotationService extends Service implements SensorEventListener {
         }
     }
 
-    private void setAutoOrientationEnabled(boolean enabled) {
+    private void setAutoOrientationEnabled() {
         try {
             if (Settings.System.canWrite(getApplicationContext())) {
-                Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, enabled ? 1 : 0);
+                Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1);
             } else {
                 Log.w(TAG, "Cannot write settings. WRITE_SETTINGS permission not granted.");
             }
