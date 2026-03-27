@@ -6,47 +6,43 @@
 
     <!-- Phone body (lying flat/horizontal) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#000000"
         android:pathData="M30,46 L78,46 Q82,46 82,50 L82,58 Q82,62 78,62 L30,62 Q26,62 26,58 L26,50 Q26,46 30,46 Z" />
 
-    <!-- Phone screen -->
+    <!-- Phone screen (cutout) -->
     <path
-        android:fillColor="#E0E0E0"
+        android:fillColor="#FFFFFF"
         android:pathData="M32,48 L72,48 L72,60 L32,60 Z" />
-
-    <!-- Phone home button/camera -->
-    <path
-        android:fillColor="#E0E0E0"
-        android:pathData="M76,52 A2,2 0 1,1 76,56 A2,2 0 1,1 76,52 Z" />
 
     <!-- Rotation arrow top (curved arrow pointing right) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#000000"
         android:strokeWidth="2.5"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#000000"
         android:pathData="M38,32 A18,18 0 0,1 70,32"
         android:strokeLineCap="round" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#000000"
         android:pathData="M66,26 L72,32 L66,38 Z" />
 
     <!-- Rotation arrow bottom (curved arrow pointing left) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#000000"
         android:strokeWidth="2.5"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#000000"
         android:pathData="M70,76 A18,18 0 0,1 38,76"
         android:strokeLineCap="round" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#000000"
         android:pathData="M42,70 L36,76 L42,82 Z" />
 
     <!-- Prohibition slash (diagonal line through rotation arrows) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#000000"
         android:strokeWidth="4"
-        android:strokeColor="#FF5252"
+        android:strokeColor="#000000"
         android:pathData="M28,28 L80,80"
         android:strokeLineCap="round" />
 
 </vector>
+

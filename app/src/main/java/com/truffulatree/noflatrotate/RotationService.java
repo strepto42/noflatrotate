@@ -28,10 +28,11 @@ public class RotationService extends Service implements SensorEventListener {
     static final int NOTIFICATION_ID = 1;
     private static final int SENSOR_DELAY_MICROS = 100 * 1000; // 100ms
     private static final float FLAT_THRESHOLD_DEGREES = 20.0f; // Threshold for disabling rotation
-    private static final float VERTICAL_THRESHOLD_DEGREES = 25.0f; // Threshold for re-enabling rotation (hysteresis)
+    private static final float VERTICAL_THRESHOLD_DEGREES = 30.0f; // Threshold for re-enabling rotation (hysteresis)
     private boolean rotationPreviouslyLocked = false;
     private boolean deviceInFlatMode = false; // Track current flat state for hysteresis
     private WindowManager windowManager;
+    private int lastStableRotation = Surface.ROTATION_0; // Track last rotation when device was NOT flat
 
     @Override
     public void onCreate() {
@@ -51,6 +52,8 @@ public class RotationService extends Service implements SensorEventListener {
             stopSelf();
             return;
         }
+        // Initialize last stable rotation to current display rotation
+        lastStableRotation = windowManager.getDefaultDisplay().getRotation();
         createNotificationChannel();
     }
 
@@ -137,11 +140,17 @@ public class RotationService extends Service implements SensorEventListener {
             int currentRotationSetting = Settings.System.getInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1);
             boolean rotationEnabled = currentRotationSetting == 1;
 
+            // Always track the current display rotation when not flat
+            // This ensures we remember what orientation the user had before laying the device flat
+            if (!isFlat) {
+                lastStableRotation = windowManager.getDefaultDisplay().getRotation();
+            }
+
             if (isFlat) {
                 if (rotationEnabled) {
-                    lockRotationToCurrent();
+                    lockRotationToStable();
                     rotationPreviouslyLocked = true;
-                    Log.d(TAG, "Device is flat. Locking current screen rotation. Angle from vertical: " + String.format("%.1f", angle));
+                    Log.d(TAG, "Device is flat. Locking to last stable rotation: " + lastStableRotation + ". Angle from vertical: " + String.format("%.1f", angle));
                 }
             } else {
                 if (!rotationEnabled && rotationPreviouslyLocked) {
@@ -160,33 +169,12 @@ public class RotationService extends Service implements SensorEventListener {
         }
     }
 
-    private void lockRotationToCurrent() {
+    private void lockRotationToStable() {
         try {
             if (Settings.System.canWrite(getApplicationContext())) {
-                // Get the current screen rotation
-                int currentRotation = windowManager.getDefaultDisplay().getRotation();
-
-                // Map the rotation to Settings.System.USER_ROTATION values
-                int userRotation;
-                switch (currentRotation) {
-                    case Surface.ROTATION_0:
-                        userRotation = Surface.ROTATION_0;
-                        break;
-                    case Surface.ROTATION_90:
-                        userRotation = Surface.ROTATION_90;
-                        break;
-                    case Surface.ROTATION_180:
-                        userRotation = Surface.ROTATION_180;
-                        break;
-                    case Surface.ROTATION_270:
-                        userRotation = Surface.ROTATION_270;
-                        break;
-                    default:
-                        userRotation = Surface.ROTATION_0;
-                }
-
-                // Lock rotation to current orientation
-                Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, userRotation);
+                // Use the last stable rotation (captured when device was not flat)
+                // This prevents locking to a transitional orientation
+                Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, lastStableRotation);
                 Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0);
             } else {
                 Log.w(TAG, "Cannot write settings. WRITE_SETTINGS permission not granted.");
