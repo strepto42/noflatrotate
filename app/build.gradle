@@ -27,9 +27,8 @@ android {
         targetCompatibility JavaVersion.VERSION_18
     }
     buildFeatures {
-        viewBinding false // Assuming no view binding for this simple app
+        viewBinding false
     }
-    // It's good practice to configure Robolectric options, especially for SDKs
     testOptions {
         unitTests {
             includeAndroidResources = true
@@ -38,30 +37,26 @@ android {
 }
 
 dependencies {
-    implementation libs.androidx.core // Changed from core-ktx
+    implementation libs.androidx.core
     implementation libs.androidx.appcompat
     implementation libs.material
     implementation libs.androidx.constraintlayout
 
-    // JUnit - Standard for Java unit tests
+    // JUnit
     testImplementation libs.junit
 
-    // Mockito - For mocking objects in tests
+    // Mockito
     testImplementation libs.mockito.core
     testImplementation libs.mockito.inline
-    // For final classes/methods and static mocking
 
-    // Robolectric - For running Android unit tests on the JVM
+    // Robolectric
     testImplementation libs.robolectric
 
-    // AndroidX Test Core - Provides core testing APIs, often used with Robolectric
-    testImplementation libs.core
-    testImplementation libs.androidx.junit
+    // AndroidX Test
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.ext.junit
 
-    // testImplementation 'androidx.test:runner:1.5.2' // Usually for instrumented tests, but can be useful
-    // testImplementation 'androidx.test:rules:1.5.0'   // For Junit Rules in testing
-
-    // Instrumented tests (androidTest configuration)
-    androidTestImplementation libs.androidx.junit
+    // Instrumented tests
+    androidTestImplementation libs.androidx.test.ext.junit
     androidTestImplementation libs.androidx.espresso.core
 }

@@ -47,4 +47,104 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/explanation_text_view" />
 
+    <!-- Settings Section -->
+    <TextView
+        android:id="@+id/settings_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="32dp"
+        android:layout_marginEnd="32dp"
+        android:text="@string/preferences_title"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/permission_granted_text_view" />
+
+    <!-- Start on Boot Switch -->
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/start_on_boot_switch"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="32dp"
+        android:text="@string/start_on_boot_label"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/settings_title" />
+
+    <!-- Flat Threshold -->
+    <TextView
+        android:id="@+id/flat_threshold_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="32dp"
+        android:text="@string/flat_threshold_label"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/start_on_boot_switch" />
+
+    <SeekBar
+        android:id="@+id/flat_threshold_seekbar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="16dp"
+        android:max="45"
+        android:progress="20"
+        app:layout_constraintEnd_toStartOf="@+id/flat_threshold_value"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/flat_threshold_label" />
+
+    <TextView
+        android:id="@+id/flat_threshold_value"
+        android:layout_width="48dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="32dp"
+        android:gravity="center"
+        tools:text="20°"
+        app:layout_constraintBottom_toBottomOf="@+id/flat_threshold_seekbar"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/flat_threshold_seekbar" />
+
+    <!-- Vertical Threshold -->
+    <TextView
+        android:id="@+id/vertical_threshold_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="32dp"
+        android:text="@string/vertical_threshold_label"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/flat_threshold_seekbar" />
+
+    <SeekBar
+        android:id="@+id/vertical_threshold_seekbar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="16dp"
+        android:max="60"
+        android:progress="30"
+        app:layout_constraintEnd_toStartOf="@+id/vertical_threshold_value"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/vertical_threshold_label" />
+
+    <TextView
+        android:id="@+id/vertical_threshold_value"
+        android:layout_width="48dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="32dp"
+        android:gravity="center"
+        tools:text="30°"
+        app:layout_constraintBottom_toBottomOf="@+id/vertical_threshold_seekbar"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/vertical_threshold_seekbar" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

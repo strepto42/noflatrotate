@@ -2,7 +2,6 @@
     <string name="app_name">NoFlatRotate</string>
     <string name="welcome_message">Welcome to NoFlatRotate!</string>
     <string name="explanation">This app disables screen rotation when your device is flat.</string>
-    <string name="settings_permission_prompt">To function correctly, this app needs permission to modify system settings.</string>
     <string name="grant_permission_button">Grant Permission</string>
     <string name="permission_granted_message">Permissions granted. The service is now active.</string>
 
@@ -13,4 +12,11 @@
 
     <string name="notification_permission_denied">Notification permission denied. The service might not show status updates.</string>
     <string name="write_settings_permission_denied">Write Settings permission denied. The app cannot control screen rotation.</string>
+
+    <!-- Preferences -->
+    <string name="preferences_title">Settings</string>
+    <string name="start_on_boot_label">Start on boot</string>
+    <string name="flat_threshold_label">Flat threshold (degrees)</string>
+    <string name="vertical_threshold_label">Unlock threshold (degrees)</string>
+    <string name="degree_format">%1$d°</string>
 </resources>

@@ -4,8 +4,11 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -14,30 +17,56 @@ import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.Display;
 import android.view.Surface;
 import android.view.WindowManager;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 public class RotationService extends Service implements SensorEventListener {
 
     private static final String TAG = "RotationService";
+    public static final String ACTION_CONFIG_CHANGED = "com.truffulatree.noflatrotate.CONFIG_CHANGED";
+
     private SensorManager sensorManager;
     private Sensor accelerometer;
     static final String CHANNEL_ID = "RotationServiceChannel";
     static final int NOTIFICATION_ID = 1;
     private static final int SENSOR_DELAY_MICROS = 100 * 1000; // 100ms
-    private static final float FLAT_THRESHOLD_DEGREES = 20.0f; // Threshold for disabling rotation
-    private static final float VERTICAL_THRESHOLD_DEGREES = 30.0f; // Threshold for re-enabling rotation (hysteresis)
+
+    // Configurable thresholds (loaded from preferences)
+    private float flatThresholdDegrees = MainActivity.DEFAULT_FLAT_THRESHOLD;
+    private float verticalThresholdDegrees = MainActivity.DEFAULT_VERTICAL_THRESHOLD;
+
     private boolean rotationPreviouslyLocked = false;
-    private boolean deviceInFlatMode = false; // Track current flat state for hysteresis
+    private boolean deviceInFlatMode = false;
     private WindowManager windowManager;
-    private int lastStableRotation = Surface.ROTATION_0; // Track last rotation when device was NOT flat
+    private int lastStableRotation = Surface.ROTATION_0;
+
+    // Receiver for config changes
+    private final BroadcastReceiver configChangedReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (ACTION_CONFIG_CHANGED.equals(intent.getAction())) {
+                loadThresholdsFromPreferences();
+                Log.d(TAG, "Config changed. New thresholds: flat=" + flatThresholdDegrees + ", vertical=" + verticalThresholdDegrees);
+            }
+        }
+    };
 
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "Service onCreate");
+
+        // Load thresholds from preferences
+        loadThresholdsFromPreferences();
+
+        // Register config change receiver
+        IntentFilter filter = new IntentFilter(ACTION_CONFIG_CHANGED);
+        ContextCompat.registerReceiver(this, configChangedReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         if (sensorManager != null) {
@@ -53,8 +82,24 @@ public class RotationService extends Service implements SensorEventListener {
             return;
         }
         // Initialize last stable rotation to current display rotation
-        lastStableRotation = windowManager.getDefaultDisplay().getRotation();
+        lastStableRotation = getCurrentRotation();
         createNotificationChannel();
+    }
+
+    @SuppressWarnings("deprecation")
+    private int getCurrentRotation() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Display display = getDisplay();
+            return display != null ? display.getRotation() : Surface.ROTATION_0;
+        } else {
+            return windowManager.getDefaultDisplay().getRotation();
+        }
+    }
+
+    private void loadThresholdsFromPreferences() {
+        SharedPreferences prefs = getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE);
+        flatThresholdDegrees = prefs.getInt(MainActivity.KEY_FLAT_THRESHOLD, MainActivity.DEFAULT_FLAT_THRESHOLD);
+        verticalThresholdDegrees = prefs.getInt(MainActivity.KEY_VERTICAL_THRESHOLD, MainActivity.DEFAULT_VERTICAL_THRESHOLD);
     }
 
     @Override
@@ -83,6 +128,14 @@ public class RotationService extends Service implements SensorEventListener {
     public void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "Service onDestroy");
+
+        // Unregister config change receiver
+        try {
+            unregisterReceiver(configChangedReceiver);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "Config receiver was not registered");
+        }
+
         if (sensorManager != null) {
             sensorManager.unregisterListener(this);
         }
@@ -116,16 +169,16 @@ public class RotationService extends Service implements SensorEventListener {
             normalizedZ = Math.max(0.0, Math.min(1.0, normalizedZ)); // Clamp to valid range
             double angleFromVertical = Math.acos(normalizedZ) * 180.0 / Math.PI;
 
-            // Implement hysteresis for flat detection
+            // Implement hysteresis for flat detection using configurable thresholds
             boolean shouldBeFlat;
             if (!deviceInFlatMode) {
-                // Not currently in flat mode - transition to flat at 20 degrees
-                shouldBeFlat = (Math.abs(angleFromVertical) < FLAT_THRESHOLD_DEGREES) ||
-                               (Math.abs(angleFromVertical - 180.0) < FLAT_THRESHOLD_DEGREES);
+                // Not currently in flat mode - transition to flat at flatThresholdDegrees
+                shouldBeFlat = (Math.abs(angleFromVertical) < flatThresholdDegrees) ||
+                               (Math.abs(angleFromVertical - 180.0) < flatThresholdDegrees);
             } else {
-                // Currently in flat mode - only exit flat mode at 25 degrees
-                shouldBeFlat = (Math.abs(angleFromVertical) < VERTICAL_THRESHOLD_DEGREES) ||
-                               (Math.abs(angleFromVertical - 180.0) < VERTICAL_THRESHOLD_DEGREES);
+                // Currently in flat mode - only exit flat mode at verticalThresholdDegrees
+                shouldBeFlat = (Math.abs(angleFromVertical) < verticalThresholdDegrees) ||
+                               (Math.abs(angleFromVertical - 180.0) < verticalThresholdDegrees);
             }
 
             // Update the flat mode state
@@ -143,7 +196,7 @@ public class RotationService extends Service implements SensorEventListener {
             // Always track the current display rotation when not flat
             // This ensures we remember what orientation the user had before laying the device flat
             if (!isFlat) {
-                lastStableRotation = windowManager.getDefaultDisplay().getRotation();
+                lastStableRotation = getCurrentRotation();
             }
 
             if (isFlat) {

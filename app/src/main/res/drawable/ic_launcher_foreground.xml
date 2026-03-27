@@ -4,49 +4,60 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Phone body (lying flat/horizontal) -->
+    <!-- Phone body - vertical smartphone shape -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M30,46 L78,46 Q82,46 82,50 L82,58 Q82,62 78,62 L30,62 Q26,62 26,58 L26,50 Q26,46 30,46 Z" />
+        android:pathData="M38,20 L70,20 Q76,20 76,26 L76,82 Q76,88 70,88 L38,88 Q32,88 32,82 L32,26 Q32,20 38,20 Z" />
 
     <!-- Phone screen -->
     <path
-        android:fillColor="#E0E0E0"
-        android:pathData="M32,48 L72,48 L72,60 L32,60 Z" />
+        android:fillColor="#B2DFDB"
+        android:pathData="M36,28 L72,28 L72,76 L36,76 Z" />
 
-    <!-- Phone home button/camera -->
+    <!-- Phone speaker/notch at top -->
     <path
-        android:fillColor="#E0E0E0"
-        android:pathData="M76,52 A2,2 0 1,1 76,56 A2,2 0 1,1 76,52 Z" />
+        android:fillColor="#B2DFDB"
+        android:pathData="M48,23 L60,23 Q61,23 61,24 L61,25 Q61,26 60,26 L48,26 Q47,26 47,25 L47,24 Q47,23 48,23 Z" />
 
-    <!-- Rotation arrow top (curved arrow pointing right) -->
+    <!-- Phone home button/bar at bottom -->
+    <path
+        android:fillColor="#B2DFDB"
+        android:pathData="M46,80 L62,80 Q63,80 63,81 L63,82 Q63,83 62,83 L46,83 Q45,83 45,82 L45,81 Q45,80 46,80 Z" />
+
+    <!-- Rotation arrow - curved arrow on left side -->
     <path
         android:fillColor="#FFFFFF"
         android:strokeWidth="2.5"
         android:strokeColor="#FFFFFF"
-        android:pathData="M38,32 A18,18 0 0,1 70,32"
+        android:pathData="M22,40 Q16,54 22,68"
         android:strokeLineCap="round" />
+    <!-- Arrow head pointing down -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M66,26 L72,32 L66,38 Z" />
+        android:pathData="M18,64 L22,72 L26,64 Z" />
 
-    <!-- Rotation arrow bottom (curved arrow pointing left) -->
+    <!-- Rotation arrow - curved arrow on right side -->
     <path
         android:fillColor="#FFFFFF"
         android:strokeWidth="2.5"
         android:strokeColor="#FFFFFF"
-        android:pathData="M70,76 A18,18 0 0,1 38,76"
+        android:pathData="M86,68 Q92,54 86,40"
+        android:strokeLineCap="round" />
+    <!-- Arrow head pointing up -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M82,44 L86,36 L90,44 Z" />
+
+    <!-- Block/lock indicator - small "X" or slash over the rotation concept -->
+    <path
+        android:strokeWidth="3"
+        android:strokeColor="#EF5350"
+        android:pathData="M16,32 L28,48"
         android:strokeLineCap="round" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M42,70 L36,76 L42,82 Z" />
-
-    <!-- Prohibition slash (diagonal line through rotation arrows) -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:strokeWidth="4"
-        android:strokeColor="#FF5252"
-        android:pathData="M28,28 L80,80"
+        android:strokeWidth="3"
+        android:strokeColor="#EF5350"
+        android:pathData="M80,60 L92,76"
         android:strokeLineCap="round" />
 
 </vector>

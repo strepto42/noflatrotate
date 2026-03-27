@@ -303,9 +303,79 @@ public class RotationServiceTest {
         boolean[] expectedStates = {false, true, true, true, true, false, false, true};
         
         for (int i = 0; i < angles.length; i++) {
-            inFlatMode = calculateShouldBeFlat(angles[i], inFlatMode);
+            inFlatMode = calculateShouldBeFlat(angles[i], inFlatMode, FLAT_THRESHOLD_DEGREES, VERTICAL_THRESHOLD_DEGREES);
             assertEquals("State mismatch at angle " + angles[i], expectedStates[i], inFlatMode);
         }
+    }
+
+    // ==================== Configurable Threshold Tests ====================
+
+    @Test
+    public void configurableThresholds_tighterThresholds() {
+        // Test with tighter thresholds (10° flat, 15° unlock)
+        float flatThreshold = 10.0f;
+        float verticalThreshold = 15.0f;
+        
+        // 12 degrees should NOT be flat with 10° threshold
+        assertFalse("12° should not be flat with 10° threshold",
+                calculateShouldBeFlat(12.0, false, flatThreshold, verticalThreshold));
+        
+        // 8 degrees SHOULD be flat
+        assertTrue("8° should be flat with 10° threshold",
+                calculateShouldBeFlat(8.0, false, flatThreshold, verticalThreshold));
+        
+        // Once flat, 12 degrees should stay flat (under 15° unlock threshold)
+        assertTrue("12° should stay flat with 15° unlock threshold",
+                calculateShouldBeFlat(12.0, true, flatThreshold, verticalThreshold));
+        
+        // 16 degrees should exit flat mode
+        assertFalse("16° should exit flat with 15° unlock threshold",
+                calculateShouldBeFlat(16.0, true, flatThreshold, verticalThreshold));
+    }
+
+    @Test
+    public void configurableThresholds_looserThresholds() {
+        // Test with looser thresholds (35° flat, 45° unlock)
+        float flatThreshold = 35.0f;
+        float verticalThreshold = 45.0f;
+        
+        // 30 degrees SHOULD be flat with 35° threshold
+        assertTrue("30° should be flat with 35° threshold",
+                calculateShouldBeFlat(30.0, false, flatThreshold, verticalThreshold));
+        
+        // 40 degrees should NOT be flat initially
+        assertFalse("40° should not be flat with 35° threshold",
+                calculateShouldBeFlat(40.0, false, flatThreshold, verticalThreshold));
+        
+        // Once flat, 40 degrees should stay flat (under 45° unlock threshold)
+        assertTrue("40° should stay flat with 45° unlock threshold",
+                calculateShouldBeFlat(40.0, true, flatThreshold, verticalThreshold));
+    }
+
+    @Test
+    public void configurableThresholds_defaultValues() {
+        // Verify default values match expected
+        assertEquals("Default flat threshold should be 20",
+                20, MainActivity.DEFAULT_FLAT_THRESHOLD);
+        assertEquals("Default vertical threshold should be 30",
+                30, MainActivity.DEFAULT_VERTICAL_THRESHOLD);
+    }
+
+    @Test
+    public void configurableThresholds_prefsKeysExist() {
+        // Verify preference keys are defined
+        assertNotNull("PREFS_NAME should be defined", MainActivity.PREFS_NAME);
+        assertNotNull("KEY_FLAT_THRESHOLD should be defined", MainActivity.KEY_FLAT_THRESHOLD);
+        assertNotNull("KEY_VERTICAL_THRESHOLD should be defined", MainActivity.KEY_VERTICAL_THRESHOLD);
+        assertNotNull("KEY_START_ON_BOOT should be defined", MainActivity.KEY_START_ON_BOOT);
+    }
+
+    @Test
+    public void configChangedAction_isDefined() {
+        // Verify the config changed action is defined for broadcast
+        assertNotNull("ACTION_CONFIG_CHANGED should be defined", RotationService.ACTION_CONFIG_CHANGED);
+        assertTrue("ACTION_CONFIG_CHANGED should contain package name",
+                RotationService.ACTION_CONFIG_CHANGED.contains("noflatrotate"));
     }
 
     // ==================== Helper Methods ====================
@@ -327,16 +397,25 @@ public class RotationServiceTest {
     /**
      * Determine if device should be considered flat based on angle and current state.
      * Mirrors the hysteresis logic in RotationService.onSensorChanged().
+     * Uses default thresholds.
      */
     private boolean calculateShouldBeFlat(double angleFromVertical, boolean currentlyInFlatMode) {
+        return calculateShouldBeFlat(angleFromVertical, currentlyInFlatMode, 
+                FLAT_THRESHOLD_DEGREES, VERTICAL_THRESHOLD_DEGREES);
+    }
+
+    /**
+     * Determine if device should be considered flat based on angle, current state, and configurable thresholds.
+     * Mirrors the hysteresis logic in RotationService.onSensorChanged().
+     */
+    private boolean calculateShouldBeFlat(double angleFromVertical, boolean currentlyInFlatMode,
+                                          float flatThreshold, float verticalThreshold) {
         if (!currentlyInFlatMode) {
-            // Not currently in flat mode - transition to flat at 20 degrees
-            return (Math.abs(angleFromVertical) < FLAT_THRESHOLD_DEGREES) ||
-                   (Math.abs(angleFromVertical - 180.0) < FLAT_THRESHOLD_DEGREES);
+            return (Math.abs(angleFromVertical) < flatThreshold) ||
+                   (Math.abs(angleFromVertical - 180.0) < flatThreshold);
         } else {
-            // Currently in flat mode - only exit flat mode at 30 degrees
-            return (Math.abs(angleFromVertical) < VERTICAL_THRESHOLD_DEGREES) ||
-                   (Math.abs(angleFromVertical - 180.0) < VERTICAL_THRESHOLD_DEGREES);
+            return (Math.abs(angleFromVertical) < verticalThreshold) ||
+                   (Math.abs(angleFromVertical - 180.0) < verticalThreshold);
         }
     }
 }
