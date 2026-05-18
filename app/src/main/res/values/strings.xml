@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">NoFlatRotate</string>
     <string name="welcome_message">Welcome to NoFlatRotate!</string>
-    <string name="explanation">This app disables screen rotation when your device is flat.</string>
+    <string name="explanation">This app disables screen rotation when your device is flat.\n\nYou\'re welcome!</string>
     <string name="grant_permission_button">Grant Permission</string>
     <string name="permission_granted_message">Permissions granted. The service is now active.</string>
 
