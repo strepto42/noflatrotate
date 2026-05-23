@@ -7,6 +7,7 @@
 
     <string name="service_notification_title">NoFlatRotate Active</string>
     <string name="service_notification_text">Screen rotation is managed.</string>
+    <string name="service_no_permission_text">Modify System Settings permission was revoked — open the app to re-grant.</string>
     <string name="notification_channel_name">Rotation Service Channel</string>
     <string name="notification_channel_description">Channel for Rotation Service notifications</string>
 
@@ -15,6 +16,7 @@
 
     <!-- Preferences -->
     <string name="preferences_title">Settings</string>
+    <string name="service_enabled_label">Service enabled</string>
     <string name="start_on_boot_label">Start on boot</string>
     <string name="flat_threshold_label">Flat threshold (degrees)</string>
     <string name="vertical_threshold_label">Unlock threshold (degrees)</string>

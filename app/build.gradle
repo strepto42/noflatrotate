@@ -28,6 +28,7 @@ android {
     }
     buildFeatures {
         viewBinding false
+        buildConfig true
     }
     testOptions {
         unitTests {
@@ -45,9 +46,8 @@ dependencies {
     // JUnit
     testImplementation libs.junit
 
-    // Mockito
+    // Mockito (5.x bundles inline mocking in mockito-core; no separate -inline artifact needed)
     testImplementation libs.mockito.core
-    testImplementation libs.mockito.inline
 
     // Robolectric
     testImplementation libs.robolectric

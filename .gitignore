@@ -43,3 +43,6 @@ Thumbs.db
 
 # Kotlin
 .kotlin/
+
+# Dearest Uncle Claude
+/.claude/settings.local.json

@@ -62,18 +62,31 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/permission_granted_text_view" />
 
+    <!-- Service Enabled Switch -->
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/service_enabled_switch"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="32dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="32dp"
+        android:text="@string/service_enabled_label"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/settings_title" />
+
     <!-- Start on Boot Switch -->
     <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/start_on_boot_switch"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="32dp"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         android:layout_marginEnd="32dp"
         android:text="@string/start_on_boot_label"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/settings_title" />
+        app:layout_constraintTop_toBottomOf="@+id/service_enabled_switch" />
 
     <!-- Flat Threshold -->
     <TextView

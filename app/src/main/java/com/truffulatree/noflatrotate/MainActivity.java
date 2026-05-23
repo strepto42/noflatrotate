@@ -16,6 +16,7 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 import androidx.core.content.ContextCompat;
@@ -31,8 +32,14 @@ public class MainActivity extends AppCompatActivity {
     public static final int DEFAULT_FLAT_THRESHOLD = 20;
     public static final int DEFAULT_VERTICAL_THRESHOLD = 30;
 
+    @VisibleForTesting
+    public static final int MIN_FLAT_THRESHOLD = 5;
+    @VisibleForTesting
+    public static final int MIN_HYSTERESIS_GAP = 5;
+
     private Button permissionButton;
     private TextView permissionGrantedTextView;
+    private SwitchCompat serviceEnabledSwitch;
     private SwitchCompat startOnBootSwitch;
     private SeekBar flatThresholdSeekBar;
     private SeekBar verticalThresholdSeekBar;
@@ -41,28 +48,24 @@ public class MainActivity extends AppCompatActivity {
 
     private SharedPreferences prefs;
 
-    // Modern way to handle permission requests
-    private final ActivityResultLauncher<String> requestPermissionLauncher = 
-        registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-            if (isGranted) {
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (!isGranted) {
+                    Toast.makeText(this, R.string.notification_permission_denied, Toast.LENGTH_LONG).show();
+                }
                 checkAndRequestWriteSettingsPermission();
-            } else {
-                Toast.makeText(this, R.string.notification_permission_denied, Toast.LENGTH_LONG).show();
-                checkAndRequestWriteSettingsPermission();
-            }
-        });
+            });
 
-    // Modern way to handle write settings permission
     private final ActivityResultLauncher<Intent> writeSettingsLauncher =
-        registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
-            if (Settings.System.canWrite(this)) {
-                updateUIPermissionGranted();
-                startRotationService();
-            } else {
-                updateUIPermissionNeeded();
-                Toast.makeText(this, R.string.write_settings_permission_denied, Toast.LENGTH_LONG).show();
-            }
-        });
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (Settings.System.canWrite(this)) {
+                    updateUIPermissionGranted();
+                    startRotationServiceIfEnabled();
+                } else {
+                    updateUIPermissionNeeded();
+                    Toast.makeText(this, R.string.write_settings_permission_denied, Toast.LENGTH_LONG).show();
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,11 +74,11 @@ public class MainActivity extends AppCompatActivity {
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
 
-        // Initialize views
         TextView welcomeTextView = findViewById(R.id.welcome_text_view);
         TextView explanationTextView = findViewById(R.id.explanation_text_view);
         permissionButton = findViewById(R.id.permission_button);
         permissionGrantedTextView = findViewById(R.id.permission_granted_text_view);
+        serviceEnabledSwitch = findViewById(R.id.service_enabled_switch);
         startOnBootSwitch = findViewById(R.id.start_on_boot_switch);
         flatThresholdSeekBar = findViewById(R.id.flat_threshold_seekbar);
         verticalThresholdSeekBar = findViewById(R.id.vertical_threshold_seekbar);
@@ -85,72 +88,93 @@ public class MainActivity extends AppCompatActivity {
         welcomeTextView.setText(R.string.welcome_message);
         explanationTextView.setText(R.string.explanation);
 
-        // Setup preferences UI
         setupPreferences();
-
-        // Start permission check flow
         checkAndRequestInitialPermissions();
     }
 
     private void setupPreferences() {
-        // Load saved values
+        boolean serviceEnabled = prefs.getBoolean(KEY_SERVICE_ENABLED, true);
         boolean startOnBoot = prefs.getBoolean(KEY_START_ON_BOOT, true);
         int flatThreshold = prefs.getInt(KEY_FLAT_THRESHOLD, DEFAULT_FLAT_THRESHOLD);
         int verticalThreshold = prefs.getInt(KEY_VERTICAL_THRESHOLD, DEFAULT_VERTICAL_THRESHOLD);
 
-        // Setup start on boot switch
-        startOnBootSwitch.setChecked(startOnBoot);
-        startOnBootSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            prefs.edit().putBoolean(KEY_START_ON_BOOT, isChecked).apply();
+        serviceEnabledSwitch.setChecked(serviceEnabled);
+        serviceEnabledSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean(KEY_SERVICE_ENABLED, isChecked).apply();
+            if (isChecked) {
+                startRotationServiceIfPermitted();
+            } else {
+                stopRotationService();
+            }
         });
 
-        // Setup flat threshold seekbar
+        startOnBootSwitch.setChecked(startOnBoot);
+        startOnBootSwitch.setOnCheckedChangeListener((buttonView, isChecked) ->
+                prefs.edit().putBoolean(KEY_START_ON_BOOT, isChecked).apply());
+
         flatThresholdSeekBar.setProgress(flatThreshold);
         flatThresholdValue.setText(getString(R.string.degree_format, flatThreshold));
         flatThresholdSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                // Minimum of 5 degrees
-                int value = Math.max(5, progress);
-                flatThresholdValue.setText(getString(R.string.degree_format, value));
+                int newFlat = Math.max(MIN_FLAT_THRESHOLD, progress);
+                if (newFlat != progress) {
+                    seekBar.setProgress(newFlat);
+                    return; // setProgress will re-enter with the clamped value
+                }
+                flatThresholdValue.setText(getString(R.string.degree_format, newFlat));
                 if (fromUser) {
-                    prefs.edit().putInt(KEY_FLAT_THRESHOLD, value).apply();
+                    int currentUnlock = verticalThresholdSeekBar.getProgress();
+                    int newUnlock = clampUnlockThreshold(newFlat, currentUnlock);
+                    prefs.edit()
+                            .putInt(KEY_FLAT_THRESHOLD, newFlat)
+                            .putInt(KEY_VERTICAL_THRESHOLD, newUnlock)
+                            .apply();
+                    if (newUnlock != currentUnlock) {
+                        verticalThresholdSeekBar.setProgress(newUnlock);
+                    }
                     notifyServiceOfConfigChange();
                 }
             }
 
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
-        // Setup vertical threshold seekbar
         verticalThresholdSeekBar.setProgress(verticalThreshold);
         verticalThresholdValue.setText(getString(R.string.degree_format, verticalThreshold));
         verticalThresholdSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                // Minimum of 10 degrees
-                int value = Math.max(10, progress);
-                verticalThresholdValue.setText(getString(R.string.degree_format, value));
+                int currentFlat = flatThresholdSeekBar.getProgress();
+                int clamped = clampUnlockThreshold(currentFlat, progress);
+                if (clamped != progress) {
+                    seekBar.setProgress(clamped);
+                    return; // setProgress re-enters with clamped value
+                }
+                verticalThresholdValue.setText(getString(R.string.degree_format, clamped));
                 if (fromUser) {
-                    prefs.edit().putInt(KEY_VERTICAL_THRESHOLD, value).apply();
+                    prefs.edit().putInt(KEY_VERTICAL_THRESHOLD, clamped).apply();
                     notifyServiceOfConfigChange();
                 }
             }
 
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
     }
 
+    /**
+     * Enforces unlock >= flat + MIN_HYSTERESIS_GAP. Returns the (possibly
+     * bumped) unlock value. Pure — exposed for testing.
+     */
+    @VisibleForTesting
+    public static int clampUnlockThreshold(int flat, int unlock) {
+        int minUnlock = flat + MIN_HYSTERESIS_GAP;
+        return Math.max(minUnlock, unlock);
+    }
+
     private void notifyServiceOfConfigChange() {
-        // Send broadcast to service to reload config
         Intent intent = new Intent(RotationService.ACTION_CONFIG_CHANGED);
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
@@ -158,7 +182,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void checkAndRequestInitialPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED) {
                 checkAndRequestWriteSettingsPermission();
             } else {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
@@ -171,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
     private void checkAndRequestWriteSettingsPermission() {
         if (Settings.System.canWrite(this)) {
             updateUIPermissionGranted();
-            startRotationService();
+            startRotationServiceIfEnabled();
         } else {
             updateUIPermissionNeeded();
         }
@@ -192,19 +217,40 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestWriteSettingsPermission() {
         Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
-        intent.setData(Uri.parse("package:" + getPackageName()));
+        intent.setData(Uri.fromParts("package", getPackageName(), null));
         writeSettingsLauncher.launch(intent);
     }
 
-    private void startRotationService() {
-        // Save that the service should be running (for boot receiver)
-        prefs.edit().putBoolean(KEY_SERVICE_ENABLED, true).apply();
+    /**
+     * Called from the permission-grant flow. Respects the service-enabled
+     * toggle so we don't surprise the user by starting a service they
+     * explicitly disabled.
+     */
+    private void startRotationServiceIfEnabled() {
+        if (!prefs.getBoolean(KEY_SERVICE_ENABLED, true)) return;
+        startServiceIntent();
+    }
 
+    /**
+     * Called from the service-enabled switch. Only starts when permissions
+     * are present; otherwise the switch state still persists and the service
+     * will start once the user grants permission.
+     */
+    private void startRotationServiceIfPermitted() {
+        if (!Settings.System.canWrite(this)) return;
+        startServiceIntent();
+    }
+
+    private void startServiceIntent() {
         Intent serviceIntent = new Intent(this, RotationService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
         } else {
             startService(serviceIntent);
         }
+    }
+
+    private void stopRotationService() {
+        stopService(new Intent(this, RotationService.class));
     }
 }

@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -20,36 +21,76 @@ import android.util.Log;
 import android.view.Surface;
 import android.view.WindowManager;
 
+import androidx.annotation.StringRes;
+import androidx.annotation.VisibleForTesting;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
+import java.util.Locale;
+import java.util.function.BooleanSupplier;
+
+/**
+ * Monitors the accelerometer and locks rotation when the device is flat.
+ * Threading: all mutable fields below are read/written on the main thread.
+ * Sensor callbacks are delivered on the main looper because we don't pass a
+ * Handler to registerListener(); the config-change BroadcastReceiver also
+ * fires on the main thread. Fields are still marked volatile so the
+ * invariant survives a future change (e.g. moving sensor work to a
+ * HandlerThread) without subtle visibility bugs.
+ */
 public class RotationService extends Service implements SensorEventListener {
 
     private static final String TAG = "RotationService";
     public static final String ACTION_CONFIG_CHANGED = "com.truffulatree.noflatrotate.CONFIG_CHANGED";
 
-    private SensorManager sensorManager;
-    private Sensor accelerometer;
     static final String CHANNEL_ID = "RotationServiceChannel";
     static final int NOTIFICATION_ID = 1;
     private static final int SENSOR_DELAY_MICROS = 100 * 1000; // 100ms
 
-    // Configurable thresholds (loaded from preferences)
-    private float flatThresholdDegrees = MainActivity.DEFAULT_FLAT_THRESHOLD;
-    private float verticalThresholdDegrees = MainActivity.DEFAULT_VERTICAL_THRESHOLD;
+    @VisibleForTesting
+    static final double MIN_MAGNITUDE = 0.1;
 
-    private boolean rotationPreviouslyLocked = false;
-    private boolean deviceInFlatMode = false;
+    /**
+     * Persisted bookkeeping flag: "did this service (in a possibly earlier
+     * process incarnation) put ACCELEROMETER_ROTATION into the locked state?"
+     * Survives process death so we can unlock when the device is picked up
+     * again after a reboot / OOM kill / app update.
+     */
+    @VisibleForTesting
+    static final String KEY_ROTATION_PREVIOUSLY_LOCKED = "rotation_previously_locked";
+
+    private SensorManager sensorManager;
+    private Sensor accelerometer;
     private WindowManager windowManager;
-    private int lastStableRotation = Surface.ROTATION_0;
 
-    // Receiver for config changes
+    private volatile float flatThresholdDegrees = MainActivity.DEFAULT_FLAT_THRESHOLD;
+    private volatile float verticalThresholdDegrees = MainActivity.DEFAULT_VERTICAL_THRESHOLD;
+
+    private volatile boolean rotationPreviouslyLocked = false;
+    private volatile boolean deviceInFlatMode = false;
+    private volatile int lastStableRotation = Surface.ROTATION_0;
+
+    private boolean configReceiverRegistered = false;
+
+    // Most-recent state we surfaced via the notification, so we only call
+    // NotificationManager.notify() when the displayed text needs to change.
+    private boolean lastNotifiedPermissionOk = true;
+
+    // Indirection so tests can simulate "WRITE_SETTINGS revoked" — Robolectric
+    // 4.16 has no setCanWrite shadow for Settings.System.
+    @VisibleForTesting
+    BooleanSupplier canWriteSettingsSupplier = () ->
+            Settings.System.canWrite(getApplicationContext());
+
     private final BroadcastReceiver configChangedReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (ACTION_CONFIG_CHANGED.equals(intent.getAction())) {
                 loadThresholdsFromPreferences();
-                Log.d(TAG, "Config changed. New thresholds: flat=" + flatThresholdDegrees + ", vertical=" + verticalThresholdDegrees);
+                if (BuildConfig.DEBUG) {
+                    Log.d(TAG, "Config changed. flat=" + flatThresholdDegrees
+                            + " vertical=" + verticalThresholdDegrees);
+                }
             }
         }
     };
@@ -57,37 +98,37 @@ public class RotationService extends Service implements SensorEventListener {
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.d(TAG, "Service onCreate");
+        if (BuildConfig.DEBUG) Log.d(TAG, "Service onCreate");
 
-        // Load thresholds from preferences
         loadThresholdsFromPreferences();
+        rotationPreviouslyLocked = getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(KEY_ROTATION_PREVIOUSLY_LOCKED, false);
 
-        // Register config change receiver
         IntentFilter filter = new IntentFilter(ACTION_CONFIG_CHANGED);
         ContextCompat.registerReceiver(this, configChangedReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        configReceiverRegistered = true;
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        if (sensorManager != null) {
-            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        } else {
+        if (sensorManager == null) {
             Log.e(TAG, "SensorManager not available. Stopping service.");
             stopSelf();
             return;
         }
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         if (accelerometer == null) {
             Log.e(TAG, "Accelerometer not available. Stopping service.");
             stopSelf();
             return;
         }
-        // Initialize last stable rotation to current display rotation
         lastStableRotation = getCurrentRotation();
         createNotificationChannel();
     }
 
     private int getCurrentRotation() {
-        // Note: getDefaultDisplay() is deprecated but getDisplay() can't be used from a Service
-        // context (only visual contexts like Activity). This is the correct approach for Services.
+        // getDefaultDisplay() is deprecated but getDisplay() requires a visual
+        // context (Activity), which a Service is not. This is the correct
+        // call site for a Service.
         return windowManager.getDefaultDisplay().getRotation();
     }
 
@@ -99,21 +140,23 @@ public class RotationService extends Service implements SensorEventListener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.d(TAG, "Service onStartCommand");
+        if (BuildConfig.DEBUG) Log.d(TAG, "Service onStartCommand");
         if (accelerometer == null) {
             Log.w(TAG, "Accelerometer not available when starting command. Service will stop.");
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle(getString(R.string.service_notification_title))
-                .setContentText(getString(R.string.service_notification_text))
-                .setSmallIcon(R.mipmap.ic_launcher) // TODO: Consider a dedicated monochrome notification icon
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build();
+        boolean permissionOk = canWriteSettingsSupplier.getAsBoolean();
+        Notification notification = buildNotification(this, permissionOk);
+        lastNotifiedPermissionOk = permissionOk;
 
-        startForeground(NOTIFICATION_ID, notification);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
 
         sensorManager.registerListener(this, accelerometer, SENSOR_DELAY_MICROS);
         return START_STICKY;
@@ -122,21 +165,23 @@ public class RotationService extends Service implements SensorEventListener {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        Log.d(TAG, "Service onDestroy");
+        if (BuildConfig.DEBUG) Log.d(TAG, "Service onDestroy");
 
-        // Unregister config change receiver
-        try {
+        if (configReceiverRegistered) {
             unregisterReceiver(configChangedReceiver);
-        } catch (IllegalArgumentException e) {
-            Log.w(TAG, "Config receiver was not registered");
+            configReceiverRegistered = false;
         }
 
         if (sensorManager != null) {
             sensorManager.unregisterListener(this);
         }
         if (rotationPreviouslyLocked) {
-            setAutoOrientationEnabled();
-            Log.d(TAG, "Service destroyed. Re-enabled auto-rotation.");
+            // Best-effort unlock at shutdown. If this fails (e.g. permission
+            // revoked) the persisted flag stays true so a future service
+            // instance can finish the job on its next non-flat sample.
+            if (unlockRotation() && BuildConfig.DEBUG) {
+                Log.d(TAG, "Service destroyed → re-enabled auto-rotation.");
+            }
         }
     }
 
@@ -147,135 +192,212 @@ public class RotationService extends Service implements SensorEventListener {
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            float x = event.values[0];
-            float y = event.values[1];
-            float z = event.values[2];
-
-            // Calculate device orientation angle from vertical
-            double magnitude = Math.sqrt(x * x + y * y + z * z);
-            if (magnitude < 0.1) { // Avoid division by very small numbers
-                Log.w(TAG, "Sensor returned very small magnitude vector: " + magnitude);
-                return;
-            }
-
-            // Normalize z component and calculate angle from vertical
-            double normalizedZ = Math.abs(z) / magnitude;
-            normalizedZ = Math.max(0.0, Math.min(1.0, normalizedZ)); // Clamp to valid range
-            double angleFromVertical = Math.acos(normalizedZ) * 180.0 / Math.PI;
-
-            // Implement hysteresis for flat detection using configurable thresholds
-            boolean shouldBeFlat;
-            if (!deviceInFlatMode) {
-                // Not currently in flat mode - transition to flat at flatThresholdDegrees
-                shouldBeFlat = (Math.abs(angleFromVertical) < flatThresholdDegrees) ||
-                               (Math.abs(angleFromVertical - 180.0) < flatThresholdDegrees);
-            } else {
-                // Currently in flat mode - only exit flat mode at verticalThresholdDegrees
-                shouldBeFlat = (Math.abs(angleFromVertical) < verticalThresholdDegrees) ||
-                               (Math.abs(angleFromVertical - 180.0) < verticalThresholdDegrees);
-            }
-
-            // Update the flat mode state
-            deviceInFlatMode = shouldBeFlat;
-
-            handleRotationState(shouldBeFlat, angleFromVertical);
+        if (event.sensor.getType() != Sensor.TYPE_ACCELEROMETER) return;
+        double angle = evaluateRawSample(event.values[0], event.values[1], event.values[2]);
+        if (angle < 0) {
+            Log.w(TAG, "Sensor magnitude too small; skipping sample.");
+            return;
         }
+        handleRotationState(deviceInFlatMode, angle);
+    }
+
+    /**
+     * Pure-ish decision step: maps one raw accelerometer sample to the new
+     * deviceInFlatMode value and returns the computed angle (or -1 if the
+     * sample is unusable). No system writes, no Context required — so tests
+     * can drive this directly without a Robolectric service shell.
+     * No smoothing or debounce: the app exists to lock the *instant* the
+     * device is laid flat. Hysteresis (different flat/unlock thresholds) is
+     * the sole jitter defence.
+     */
+    @VisibleForTesting
+    double evaluateRawSample(float x, float y, float z) {
+        double angle = computeAngleFromVertical(x, y, z);
+        if (angle < 0) return angle;
+        deviceInFlatMode = shouldBeFlat(angle, deviceInFlatMode,
+                flatThresholdDegrees, verticalThresholdDegrees);
+        return angle;
+    }
+
+    @VisibleForTesting
+    boolean isDeviceInFlatModeForTesting() {
+        return deviceInFlatMode;
+    }
+
+    @VisibleForTesting
+    boolean isRotationPreviouslyLockedForTesting() {
+        return rotationPreviouslyLocked;
+    }
+
+    @VisibleForTesting
+    void handleRotationStateForTesting(boolean isFlat, double angle) {
+        handleRotationState(isFlat, angle);
+    }
+
+    /**
+     * Returns the angle (in degrees) between the device's z-axis and the
+     * gravity vector, treating face-up and face-down both as 0°.
+     * Returns -1 if the sensor sample is too small to be trustworthy.
+     */
+    @VisibleForTesting
+    static double computeAngleFromVertical(float x, float y, float z) {
+        double magnitude = Math.sqrt((double) x * x + (double) y * y + (double) z * z);
+        if (magnitude < MIN_MAGNITUDE) return -1.0;
+        double normalizedZ = Math.abs(z) / magnitude;
+        if (normalizedZ > 1.0) normalizedZ = 1.0; // guard against FP rounding past 1
+        return Math.acos(normalizedZ) * 180.0 / Math.PI;
+    }
+
+    /**
+     * Hysteresis: once flat, only the (larger) unlock threshold can break us
+     * out; otherwise the (smaller) flat threshold gates entry. acos returns
+     * [0, π] so angleFromVertical is always non-negative — no abs() needed.
+     */
+    @VisibleForTesting
+    static boolean shouldBeFlat(double angleFromVertical, boolean currentlyFlat,
+                                 float flatThreshold, float verticalThreshold) {
+        float threshold = currentlyFlat ? verticalThreshold : flatThreshold;
+        return angleFromVertical < threshold
+                || (180.0 - angleFromVertical) < threshold;
+    }
+
+    @VisibleForTesting
+    @StringRes
+    static int notificationTextResource(boolean permissionOk) {
+        return permissionOk
+                ? R.string.service_notification_text
+                : R.string.service_no_permission_text;
     }
 
     private void handleRotationState(boolean isFlat, double angle) {
         try {
-            int currentRotationSetting = Settings.System.getInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1);
+            int currentRotationSetting = Settings.System.getInt(getContentResolver(),
+                    Settings.System.ACCELEROMETER_ROTATION, 1);
             boolean rotationEnabled = currentRotationSetting == 1;
 
-            // Always track the current display rotation when not flat
-            // This ensures we remember what orientation the user had before laying the device flat
             if (!isFlat) {
                 lastStableRotation = getCurrentRotation();
             }
 
             if (isFlat) {
                 if (rotationEnabled) {
-                    lockRotationToStable();
-                    rotationPreviouslyLocked = true;
-                    Log.d(TAG, "Device is flat. Locking to last stable rotation: " + lastStableRotation + ". Angle from vertical: " + String.format("%.1f", angle));
+                    if (lockRotationToStable() && BuildConfig.DEBUG) {
+                        Log.d(TAG, "Flat → lock rotation=" + lastStableRotation
+                                + " angle=" + String.format(Locale.ROOT, "%.1f", angle));
+                    }
                 }
             } else {
                 if (!rotationEnabled && rotationPreviouslyLocked) {
-                    unlockRotation();
-                    rotationPreviouslyLocked = false;
-                    Log.d(TAG, "Device is not flat. Unlocking screen rotation. Angle from vertical: " + String.format("%.1f", angle));
+                    if (unlockRotation() && BuildConfig.DEBUG) {
+                        Log.d(TAG, "Not flat → unlock angle="
+                                + String.format(Locale.ROOT, "%.1f", angle));
+                    }
                 } else if (rotationEnabled && rotationPreviouslyLocked) {
-                    rotationPreviouslyLocked = false;
-                    Log.d(TAG, "Device is not flat. Rotation already enabled externally. Resetting lock flag. Angle from vertical: " + String.format("%.1f", angle));
+                    // User re-enabled rotation externally while we thought we
+                    // were holding the lock — clear our bookkeeping.
+                    setRotationPreviouslyLocked(false);
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, "Not flat → user re-enabled externally; clearing lock flag");
+                    }
                 }
             }
         } catch (SecurityException e) {
             Log.e(TAG, "SecurityException while accessing settings: " + e.getMessage());
-        } catch (Exception e) {
-            Log.e(TAG, "Unexpected error handling rotation state: " + e.getMessage());
         }
     }
 
-    private void lockRotationToStable() {
+    /**
+     * Mutates the rotationPreviouslyLocked field AND mirrors it to
+     * SharedPreferences so the bookkeeping survives process death. All
+     * lock-state changes must go through this method.
+     */
+    private void setRotationPreviouslyLocked(boolean locked) {
+        rotationPreviouslyLocked = locked;
+        getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_ROTATION_PREVIOUSLY_LOCKED, locked)
+                .apply();
+    }
+
+    /** Returns true on successful system write. Only on success do we record
+     *  having locked — otherwise we'd lie about persistent state. */
+    private boolean lockRotationToStable() {
+        if (!canWriteSettingsSupplier.getAsBoolean()) {
+            updateNotificationForPermissionState(false);
+            return false;
+        }
         try {
-            if (Settings.System.canWrite(getApplicationContext())) {
-                // Use the last stable rotation (captured when device was not flat)
-                // This prevents locking to a transitional orientation
-                Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, lastStableRotation);
-                Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0);
-            } else {
-                Log.w(TAG, "Cannot write settings. WRITE_SETTINGS permission not granted.");
-            }
-        } catch (Exception e) {
+            Settings.System.putInt(getContentResolver(),
+                    Settings.System.USER_ROTATION, lastStableRotation);
+            Settings.System.putInt(getContentResolver(),
+                    Settings.System.ACCELEROMETER_ROTATION, 0);
+            setRotationPreviouslyLocked(true);
+            updateNotificationForPermissionState(true);
+            return true;
+        } catch (SecurityException e) {
             Log.e(TAG, "Error locking screen rotation: " + e.getMessage());
+            updateNotificationForPermissionState(false);
+            return false;
         }
     }
 
-    private void unlockRotation() {
+    /** Returns true on successful system write. If unlock fails (permission
+     *  revoked, etc.) the flag stays true so the next sample can retry. */
+    private boolean unlockRotation() {
+        if (!canWriteSettingsSupplier.getAsBoolean()) {
+            updateNotificationForPermissionState(false);
+            return false;
+        }
         try {
-            if (Settings.System.canWrite(getApplicationContext())) {
-                // Simply re-enable auto-rotation without changing USER_ROTATION
-                Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1);
-            } else {
-                Log.w(TAG, "Cannot write settings. WRITE_SETTINGS permission not granted.");
-            }
-        } catch (Exception e) {
+            Settings.System.putInt(getContentResolver(),
+                    Settings.System.ACCELEROMETER_ROTATION, 1);
+            setRotationPreviouslyLocked(false);
+            updateNotificationForPermissionState(true);
+            return true;
+        } catch (SecurityException e) {
             Log.e(TAG, "Error unlocking screen rotation: " + e.getMessage());
+            updateNotificationForPermissionState(false);
+            return false;
         }
     }
 
-    private void setAutoOrientationEnabled() {
-        try {
-            if (Settings.System.canWrite(getApplicationContext())) {
-                Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1);
-            } else {
-                Log.w(TAG, "Cannot write settings. WRITE_SETTINGS permission not granted.");
-            }
-        } catch (Exception e) { // Catching a broad exception as putInt can also throw SecurityException
-            Log.e(TAG, "Error changing screen rotation setting: " + e.getMessage());
+    private void updateNotificationForPermissionState(boolean permissionOk) {
+        if (permissionOk == lastNotifiedPermissionOk) return;
+        lastNotifiedPermissionOk = permissionOk;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.notify(NOTIFICATION_ID, buildNotification(this, permissionOk));
         }
+    }
+
+    private static Notification buildNotification(Context context, boolean permissionOk) {
+        return new NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle(context.getString(R.string.service_notification_title))
+                .setContentText(context.getString(notificationTextResource(permissionOk)))
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
     }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        Log.d(TAG, "Sensor accuracy changed for " + sensor.getName() + ": " + accuracy);
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "Sensor accuracy changed for " + sensor.getName() + ": " + accuracy);
+        }
     }
 
     private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel serviceChannel = new NotificationChannel(
-                    CHANNEL_ID,
-                    getString(R.string.notification_channel_name),
-                    NotificationManager.IMPORTANCE_LOW
-            );
-            serviceChannel.setDescription(getString(R.string.notification_channel_description));
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(serviceChannel);
-            } else {
-                Log.e(TAG, "NotificationManager not available for creating channel.");
-            }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.notification_channel_name),
+                NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription(getString(R.string.notification_channel_description));
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.createNotificationChannel(channel);
+        } else {
+            Log.e(TAG, "NotificationManager not available for creating channel.");
         }
     }
 }
