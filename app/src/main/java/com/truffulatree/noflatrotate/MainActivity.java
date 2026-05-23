@@ -29,8 +29,8 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEY_FLAT_THRESHOLD = "flat_threshold";
     public static final String KEY_VERTICAL_THRESHOLD = "vertical_threshold";
 
-    public static final int DEFAULT_FLAT_THRESHOLD = 20;
-    public static final int DEFAULT_VERTICAL_THRESHOLD = 30;
+    public static final int DEFAULT_FLAT_THRESHOLD = 35;
+    public static final int DEFAULT_VERTICAL_THRESHOLD = 50;
 
     @VisibleForTesting
     public static final int MIN_FLAT_THRESHOLD = 5;

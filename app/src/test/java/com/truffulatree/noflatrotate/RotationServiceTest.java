@@ -178,19 +178,27 @@ public class RotationServiceTest {
 
     @Test
     public void shouldBeFlat_hysteresisPreventsBouncing() {
+        // Angles are expressed relative to the configured thresholds so this
+        // test stays meaningful if FLAT/UNLOCK change.
+        final double wellAboveUnlock = UNLOCK + 20;
+        final double wellBelowFlat = FLAT - 5;
+        final double midBand = (FLAT + UNLOCK) / 2.0;
+        final double justAboveFlat = FLAT + 2;
+        final double justAboveUnlock = UNLOCK + 5;
+
         boolean inFlat = false;
-        inFlat = RotationService.shouldBeFlat(40.0, inFlat, FLAT, UNLOCK);
+        inFlat = RotationService.shouldBeFlat(wellAboveUnlock, inFlat, FLAT, UNLOCK);
         assertFalse(inFlat);
-        inFlat = RotationService.shouldBeFlat(15.0, inFlat, FLAT, UNLOCK);
+        inFlat = RotationService.shouldBeFlat(wellBelowFlat, inFlat, FLAT, UNLOCK);
         assertTrue(inFlat);
-        inFlat = RotationService.shouldBeFlat(25.0, inFlat, FLAT, UNLOCK);
-        assertTrue("Should stay flat at 25 due to hysteresis", inFlat);
-        inFlat = RotationService.shouldBeFlat(22.0, inFlat, FLAT, UNLOCK);
+        inFlat = RotationService.shouldBeFlat(midBand, inFlat, FLAT, UNLOCK);
+        assertTrue("Should stay flat inside hysteresis band", inFlat);
+        inFlat = RotationService.shouldBeFlat(justAboveFlat, inFlat, FLAT, UNLOCK);
         assertTrue(inFlat);
-        inFlat = RotationService.shouldBeFlat(35.0, inFlat, FLAT, UNLOCK);
+        inFlat = RotationService.shouldBeFlat(justAboveUnlock, inFlat, FLAT, UNLOCK);
         assertFalse(inFlat);
-        inFlat = RotationService.shouldBeFlat(25.0, inFlat, FLAT, UNLOCK);
-        assertFalse("Should not re-enter flat at 25 — need < flat threshold", inFlat);
+        inFlat = RotationService.shouldBeFlat(midBand, inFlat, FLAT, UNLOCK);
+        assertFalse("Should not re-enter flat in mid-band — need < FLAT", inFlat);
     }
 
     @Test
@@ -262,8 +270,8 @@ public class RotationServiceTest {
 
     @Test
     public void defaultThresholds_matchExpected() {
-        assertEquals(20, MainActivity.DEFAULT_FLAT_THRESHOLD);
-        assertEquals(30, MainActivity.DEFAULT_VERTICAL_THRESHOLD);
+        assertEquals(35, MainActivity.DEFAULT_FLAT_THRESHOLD);
+        assertEquals(50, MainActivity.DEFAULT_VERTICAL_THRESHOLD);
     }
 
     @Test

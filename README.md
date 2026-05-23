@@ -8,11 +8,11 @@ Ever had your phone rotate to landscape just as you set it down on a table? This
 
 ## Features
 
-- **Smart Rotation Lock**: Automatically locks rotation when the device is flat (within 20° of horizontal by default)
+- **Smart Rotation Lock**: Automatically locks rotation when the device is flat (within 35° of horizontal by default)
 - **Hysteresis**: Uses separate thresholds for entering and exiting flat mode to prevent jittery behavior
 - **Preserves Orientation**: Remembers your last screen orientation before going flat, so it locks to that orientation (not just portrait)
 - **Start on Boot**: Optionally starts automatically when your device boots
-- **Configurable Thresholds**: Adjust the flat detection angle (default: 20°) and unlock angle (default: 30°) to suit your preferences
+- **Configurable Thresholds**: Adjust the flat detection angle (default: 35°) and unlock angle (default: 50°) to suit your preferences
 - **Lightweight**: Runs as a foreground service with minimal battery impact
 
 ## Requirements
@@ -36,8 +36,8 @@ Once permissions are granted, the app runs in the background. You'll see a persi
 Open the app to configure:
 
 - **Start on boot**: Toggle whether the service starts automatically when your device boots (default: enabled)
-- **Flat threshold**: The angle (in degrees) at which the device is considered "flat" and rotation locks (default: 20°)
-- **Unlock threshold**: The angle (in degrees) at which the device exits "flat mode" and rotation unlocks (default: 30°)
+- **Flat threshold**: The angle (in degrees) at which the device is considered "flat" and rotation locks (default: 35°)
+- **Unlock threshold**: The angle (in degrees) at which the device exits "flat mode" and rotation unlocks (default: 50°)
 
 The difference between these two thresholds creates a "hysteresis zone" that prevents rapid toggling when the device is near the threshold angle.
 
